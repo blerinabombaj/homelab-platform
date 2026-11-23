@@ -1,0 +1,6 @@
+# A Namespace is a folder for Kubernetes objects: names only need to be unique inside it,
+# and you can delete/limit/permission everything in it at once.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: voting-app

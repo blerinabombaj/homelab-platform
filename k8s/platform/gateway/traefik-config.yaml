@@ -1,0 +1,16 @@
+# k3s installs Traefik itself (via its Helm controller). HelmChartConfig = "extra Helm values
+# for the bundled Traefik chart" without replacing it.
+# We turn on Traefik's Gateway API support so it can act as our Gateway implementation.
+# (Decision: reuse Traefik instead of installing another controller -> saves RAM.)
+apiVersion: helm.cattle.io/v1
+kind: HelmChartConfig
+metadata:
+  name: traefik
+  namespace: kube-system
+spec:
+  valuesContent: |-
+    providers:
+      kubernetesGateway:
+        enabled: true      # watch Gateway/HTTPRoute objects
+    gateway:
+      enabled: false       # don't create the chart's default Gateway; we define our own below

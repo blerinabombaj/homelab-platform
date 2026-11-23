@@ -1,0 +1,11 @@
+# ConfigMap = non-secret configuration as key/value pairs. Pods read it as env vars or files.
+# Changing it does NOT restart pods automatically (Phase 4 shows how Kustomize handles that).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vote-config
+data:
+  OPTION_A: Cats
+  OPTION_B: Dogs
+  REDIS_HOST: redis
+  DB_HOST: db

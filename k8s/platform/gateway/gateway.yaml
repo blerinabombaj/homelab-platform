@@ -1,0 +1,26 @@
+# Gateway API in 3 roles:
+#   GatewayClass = WHICH implementation (Traefik here; created by the Traefik chart, named "traefik")
+#   Gateway      = a listener: "accept HTTP on this port" (owned by the platform/admin)
+#   HTTPRoute    = routing rules per app (owned by app teams, live in the app namespaces)
+# This split is the main improvement over the old Ingress object.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: gateway
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: homelab
+  namespace: gateway
+spec:
+  gatewayClassName: traefik
+  listeners:
+    - name: http
+      protocol: HTTP
+      # Traefik quirk: the port must be Traefik's internal "web" entrypoint port (8000).
+      # Traefik's Service maps the PC's port 80 -> 8000, so you still browse on port 80.
+      port: 8000
+      allowedRoutes:
+        namespaces:
+          from: All        # HTTPRoutes from any namespace may attach (lab setting; prod would restrict)

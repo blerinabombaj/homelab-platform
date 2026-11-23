@@ -1,0 +1,25 @@
+# Kustomize: built into kubectl. `kubectl apply -k <folder>` reads this file.
+# base/ = the common manifests. overlays/<env>/ = small per-environment changes on top,
+# without copy-pasting YAML (no templating, unlike Helm: just patches).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Every object below gets this namespace (so the files don't repeat it).
+namespace: voting-app
+
+# Labels added to every object, handy for `kubectl get all -l app.kubernetes.io/part-of=voting-app`.
+# includeSelectors: false = don't touch the selectors (changing selectors later breaks Deployments).
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: voting-app
+    includeSelectors: false
+
+resources:
+  - namespace.yaml
+  - configmap.yaml
+  - redis.yaml
+  - db.yaml
+  - vote.yaml
+  - result.yaml
+  - worker.yaml
+  - httproute.yaml

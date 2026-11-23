@@ -1,0 +1,17 @@
+.env
+*.env
+!.env.example
+*.tfstate
+*.tfstate.*
+.terraform/
+.terraform.lock.hcl.bak
+*.tfvars
+!example.tfvars
+kubeconfig*
+*.pem
+*.key
+__pycache__/
+node_modules/
+bin/
+obj/
+.DS_Store

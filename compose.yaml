@@ -1,0 +1,141 @@
+# Docker Compose: the whole app on one machine with one command.
+#   cp .env.example .env      # then set a real password
+#   docker compose up -d --build
+#   docker compose --profile seed run --rm seed   # optional: 3000 fake votes
+#   vote   -> http://<pc>:8080     result -> http://<pc>:8081
+#
+# Data flow:  browser -> vote -> redis (queue) -> worker -> postgres (db) -> result -> browser
+#
+# There's no top-level "version:" key: it's obsolete, and modern `docker compose` ignores it and warns.
+
+# Project name: prefixes container/network/volume names (voting-app-db-1, voting-app_db-data...).
+name: voting-app
+
+services:
+
+  # ---------- vote: Python/Flask front end, pushes votes into Redis ----------
+  vote:
+    # build: where the Dockerfile + code are. image: the tag given to the built image.
+    # Having both = "build it, and call it homelab/vote:dev" (reused later by k3s).
+    build: ./app/vote
+    image: homelab/vote:dev
+    environment:
+      REDIS_HOST: redis          # service names are DNS names on compose networks
+      OPTION_A: Cats
+      OPTION_B: Dogs
+    ports:
+      - "8080:8080"              # "HOST:CONTAINER": PC port 8080 -> container port 8080
+    healthcheck:
+      # No curl in python:slim, so use Python itself to make the HTTP request.
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/')"]
+      interval: 10s              # check every 10 s
+      timeout: 3s                # one check may take max 3 s
+      retries: 3                 # 3 failures in a row -> "unhealthy"
+      start_period: 10s          # grace time on startup, failures don't count
+    depends_on:
+      redis:
+        condition: service_healthy   # wait until Redis is HEALTHY, not just started
+    networks: [front, back]      # front: reachable by seed; back: can reach redis
+    restart: unless-stopped      # restart on crash, but not after a manual `docker compose stop`
+
+  # ---------- result: Node.js page with live results read from Postgres ----------
+  result:
+    build: ./app/result
+    image: homelab/result:dev
+    environment:
+      # ${VAR} is filled from .env (or your shell) when compose reads the file.
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db/${POSTGRES_DB}
+    ports:
+      - "8081:4000"
+    init: true                   # adds tini as PID 1: forwards signals and reaps zombies for Node
+    healthcheck:
+      # Node 24 has fetch() built in; exit code 0 = healthy, 1 = unhealthy.
+      test: ["CMD", "node", "-e", "fetch('http://localhost:4000').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+    depends_on:
+      db:
+        condition: service_healthy
+    networks: [front, back]
+    restart: unless-stopped
+
+  # ---------- worker: .NET, moves votes Redis -> Postgres ----------
+  worker:
+    build: ./app/worker
+    image: homelab/worker:dev
+    environment:
+      REDIS_HOST: redis
+      DB_HOST: db
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    depends_on:
+      redis:
+        condition: service_healthy
+      db:
+        condition: service_healthy
+    networks: [back]             # only needs the back network: no ports, no front end
+    restart: unless-stopped
+    # No healthcheck: it serves no HTTP. Kubernetes will rely on "the process is alive".
+
+  # ---------- redis: in-memory queue ----------
+  redis:
+    image: redis:8-alpine        # alpine variant = very small image
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]   # answers PONG when ready
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks: [back]
+    restart: unless-stopped
+    # No "ports:": Redis is NOT reachable from your PC/LAN, only from containers on "back".
+    # That's the point of network separation.
+
+  # ---------- db: Postgres ----------
+  db:
+    image: postgres:18-alpine
+    environment:
+      # ":?" = fail immediately with this message if the variable is missing/empty.
+      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB in .env}
+    volumes:
+      # Named volume so data survives `docker compose down` (it's only deleted with `down -v`).
+      # Postgres 18 changed the mount point: it's /var/lib/postgresql now, NOT .../data like
+      # in older tutorials. The old path breaks major-version upgrades.
+      - db-data:/var/lib/postgresql
+    healthcheck:
+      # $$ = a literal "$" for the container's shell, so the variable is read INSIDE the
+      # container, not by compose on your PC.
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks: [back]
+    restart: unless-stopped
+
+  # ---------- seed: optional load generator ----------
+  seed:
+    build: ./app/seed-data
+    image: homelab/seed:dev
+    # profiles: the service only runs when you ask for it (--profile seed). `up` alone skips it.
+    profiles: [seed]
+    environment:
+      VOTE_URL: http://vote:8080/
+    depends_on:
+      vote:
+        condition: service_healthy
+    networks: [front]
+
+# Named volumes managed by Docker (stored under /var/lib/docker/volumes on the PC).
+volumes:
+  db-data:
+
+# Two user-defined bridge networks:
+#   front = user-facing services; back = data layer. Redis/Postgres are only on "back".
+# User-defined networks also give automatic DNS by service name (the default bridge doesn't).
+networks:
+  front:
+  back:

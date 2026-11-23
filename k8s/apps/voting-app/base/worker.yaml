@@ -1,0 +1,39 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: worker
+  labels:
+    app: worker
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: worker
+  template:
+    metadata:
+      labels:
+        app: worker
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1654         # APP_UID in Microsoft's .NET images
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: worker
+          image: homelab/worker:dev
+          imagePullPolicy: IfNotPresent
+          envFrom:              # two sources: hostnames from the ConfigMap, credentials from the Secret
+            - configMapRef:
+                name: vote-config
+            - secretRef:
+                name: db-credentials
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          # No probes: the worker has no port. If the process crashes, Kubernetes restarts it anyway.
+          resources:
+            requests: { cpu: 25m, memory: 64Mi }
+            limits:   { memory: 256Mi }
+# No Service: nothing connects TO the worker, it only connects out.

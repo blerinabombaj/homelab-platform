@@ -1,0 +1,84 @@
+# Postgres is STATEFUL: it needs the same disk every time it restarts.
+# StatefulSet (not Deployment) gives each pod a stable name (db-0) and its own PersistentVolume.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: db
+  labels:
+    app: db
+spec:
+  serviceName: db               # the headless Service below (gives DNS name db-0.db)
+  replicas: 1                   # Postgres doesn't scale by just adding replicas (needs replication setup)
+  selector:
+    matchLabels:
+      app: db
+  template:
+    metadata:
+      labels:
+        app: db
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 70           # "postgres" user in the alpine image
+        runAsGroup: 70
+        fsGroup: 70             # mounted volumes get group 70, so Postgres can write to them
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: postgres
+          image: postgres:18-alpine
+          ports:
+            - name: postgres
+              containerPort: 5432
+          # envFrom: load EVERY key of the Secret as an env var
+          # (POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB).
+          # The Secret is NOT in Git: scripts/create-db-secret.sh creates it from .env.
+          envFrom:
+            - secretRef:
+                name: db-credentials
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql   # Postgres 18+ path
+          readinessProbe:
+            exec:
+              # sh -c so the shell expands the env vars inside the container
+              command: ["sh", "-c", "pg_isready -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\""]
+            periodSeconds: 5
+          livenessProbe:
+            exec:
+              command: ["sh", "-c", "pg_isready -U \"$POSTGRES_USER\""]
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          resources:
+            requests: { cpu: 50m, memory: 128Mi }
+            limits:   { memory: 512Mi }
+  # One PersistentVolumeClaim per pod, created automatically (data-db-0).
+  # k3s ships the "local-path" provisioner: the data ends up in a folder on the PC's disk.
+  # Deleting the StatefulSet does NOT delete the PVC: data is kept on purpose.
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]   # mounted by one node at a time
+        resources:
+          requests:
+            storage: 1Gi
+---
+# Headless Service (clusterIP: None): no virtual IP, DNS "db" returns the pod IP directly.
+# StatefulSets require one. Apps still just connect to "db:5432".
+apiVersion: v1
+kind: Service
+metadata:
+  name: db
+spec:
+  clusterIP: None
+  selector:
+    app: db
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: postgres

@@ -1,0 +1,15 @@
+# Exposes the Argo CD UI at http://argocd.lab.test through the shared Gateway.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: argocd
+  namespace: argocd
+spec:
+  parentRefs:
+    - name: homelab
+      namespace: gateway
+  hostnames: ["argocd.lab.test"]
+  rules:
+    - backendRefs:
+        - name: argocd-server   # Service created by the chart
+          port: 80

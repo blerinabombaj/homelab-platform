@@ -1,0 +1,31 @@
+# The "dev" environment = base + these changes.
+#   Preview: kubectl kustomize k8s/apps/voting-app/overlays/dev
+#   Apply:   kubectl apply -k k8s/apps/voting-app/overlays/dev
+# In Phase 4 Argo CD applies this folder for you.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../../base
+
+# Change image names/tags WITHOUT editing the base. When CI pushes images to GHCR, this becomes:
+#   - name: homelab/vote
+#     newName: ghcr.io/<you>/homelab-vote
+#     newTag: <git-sha>
+images:
+  - name: homelab/vote
+    newTag: dev
+  - name: homelab/result
+    newTag: dev
+  - name: homelab/worker
+    newTag: dev
+
+# A patch: dev only needs 1 vote pod to save RAM (base says 2).
+patches:
+  - target:
+      kind: Deployment
+      name: vote
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 1

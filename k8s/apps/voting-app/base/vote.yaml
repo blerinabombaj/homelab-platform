@@ -1,0 +1,66 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vote
+  labels:
+    app: vote
+spec:
+  replicas: 2                   # 2 pods: the Service load-balances between them (refresh the page, the hostname changes)
+  selector:
+    matchLabels:
+      app: vote
+  # RollingUpdate: on a new image, start a new pod, wait until it's Ready, then stop an old one.
+  # maxUnavailable 0 = never drop below 2 ready pods during an update -> zero downtime.
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: vote
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001        # matches USER in app/vote/Dockerfile
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: vote
+          # Local image built with docker and imported into k3s (scripts/k3s-import-images.sh).
+          # The overlay can swap this for a registry image (GHCR) later.
+          image: homelab/vote:dev
+          imagePullPolicy: IfNotPresent   # use the local copy, don't try to pull from Docker Hub
+          ports:
+            - name: http
+              containerPort: 8080
+          envFrom:
+            - configMapRef:
+                name: vote-config
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          readinessProbe:
+            httpGet: { path: /, port: http }
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: { path: /, port: http }
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests: { cpu: 25m, memory: 64Mi }
+            limits:   { memory: 256Mi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vote
+spec:
+  selector:
+    app: vote
+  ports:
+    - name: http
+      port: 80            # inside the cluster: http://vote
+      targetPort: http    # -> container 8080

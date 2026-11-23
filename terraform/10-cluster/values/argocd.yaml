@@ -1,0 +1,30 @@
+# Overrides for the argo-cd chart. Full list of options: helm show values argo/argo-cd
+configs:
+  params:
+    # Argo CD serves plain HTTP; TLS would be handled by the Gateway. Without this
+    # it redirects to HTTPS and you get a redirect loop behind the Gateway.
+    server.insecure: true
+
+# Components we don't need (yet) -> less RAM.
+dex:
+  enabled: false          # built-in SSO connector; Phase 7 uses Keycloak via OIDC directly
+notifications:
+  enabled: false          # Slack/Telegram notifications: maybe later
+
+# Small resource requests to fit the 8 GB budget.
+controller:
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits:   { memory: 1Gi }
+server:
+  resources:
+    requests: { cpu: 50m, memory: 128Mi }
+    limits:   { memory: 512Mi }
+repoServer:
+  resources:
+    requests: { cpu: 50m, memory: 128Mi }
+    limits:   { memory: 512Mi }
+redis:
+  resources:
+    requests: { cpu: 25m, memory: 64Mi }
+    limits:   { memory: 256Mi }

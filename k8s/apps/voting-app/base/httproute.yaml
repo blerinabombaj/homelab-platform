@@ -1,0 +1,30 @@
+# Gateway API: HTTPRoute = "send requests for this hostname to this Service".
+# It attaches to the shared Gateway (k8s/platform/gateway), which owns the PC's port 80.
+# On your Mac, add to /etc/hosts:  <pc-tailscale-ip>  vote.lab.test result.lab.test
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: vote
+spec:
+  parentRefs:
+    - name: homelab           # the Gateway's name...
+      namespace: gateway      # ...and namespace (routes can live in other namespaces)
+  hostnames: ["vote.lab.test"]
+  rules:
+    - backendRefs:
+        - name: vote          # Service name
+          port: 80
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: result
+spec:
+  parentRefs:
+    - name: homelab
+      namespace: gateway
+  hostnames: ["result.lab.test"]
+  rules:
+    - backendRefs:
+        - name: result
+          port: 80

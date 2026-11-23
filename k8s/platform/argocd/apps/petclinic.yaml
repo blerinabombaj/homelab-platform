@@ -1,0 +1,22 @@
+# Same pattern for the second project: Argo watches petclinic-delivery/deploy/overlays/dev.
+# Its CI pipeline updates the image tag there, Argo notices and rolls it out.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: petclinic
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/blerinabombaj/petclinic-delivery.git
+    targetRevision: main
+    path: deploy/overlays/dev
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: petclinic
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

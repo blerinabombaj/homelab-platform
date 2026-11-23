@@ -1,0 +1,24 @@
+# Argo CD Application = "keep the cluster in sync with this folder in Git".
+# GitOps: you never `kubectl apply` the app again. You push to Git and Argo applies it.
+# Apply once with: kubectl apply -f k8s/platform/argocd/apps/
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: voting-app
+  namespace: argocd             # Applications live in Argo's namespace
+spec:
+  project: default
+  source:
+    # The repo must be public, or you need to add credentials to Argo.
+    repoURL: https://github.com/blerinabombaj/homelab-platform.git
+    targetRevision: main         # branch to follow
+    path: k8s/apps/voting-app/overlays/dev   # Argo runs Kustomize on this folder
+  destination:
+    server: https://kubernetes.default.svc   # = this same cluster
+    namespace: voting-app
+  syncPolicy:
+    automated:
+      prune: true      # deleted from Git -> deleted from the cluster
+      selfHeal: true   # someone kubectl-edits by hand -> Argo reverts it to what Git says
+    syncOptions:
+      - CreateNamespace=true
